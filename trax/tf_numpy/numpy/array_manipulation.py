@@ -18,10 +18,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow.compat.v2 as tf
 
 from trax.tf_numpy.numpy import array_creation
+from trax.tf_numpy.numpy import arrays as arrays_lib
 from trax.tf_numpy.numpy.array_creation import asarray
+from trax.tf_numpy.numpy import utils
+from trax.tf_numpy.numpy import math
 
 
 def broadcast_to(a, shape):
@@ -37,5 +41,33 @@ def broadcast_to(a, shape):
   return array_creation.full(shape, a)
 
 
+@utils.np_doc(np.stack)
 def stack(arrays, axis=0):
-  return asarray(tf.stack([a.data for a in arrays], axis))
+  unwrapped_arrays = [
+      a.data if isinstance(a, arrays_lib.ndarray) else a for a in arrays
+  ]
+  unwrapped_arrays = array_creation._promote_dtype(*unwrapped_arrays)
+  return asarray(tf.stack(unwrapped_arrays, axis))
+
+
+@utils.np_doc(np.hstack)
+def hstack(tup):
+  unwrapped_arrays = [math.atleast_1d(a) for a in tup]
+  rank = tf.rank(unwrapped_arrays[0])
+  unwrapped_arrays = array_creation._promote_dtype(*unwrapped_arrays)
+  return utils.cond(rank == 1, lambda: tf.concat(unwrapped_arrays, axis=0),
+                    lambda: tf.concat(unwrapped_arrays, axis=1))
+
+
+@utils.np_doc(np.vstack)
+def vstack(tup):
+  unwrapped_arrays = [math.atleast_2d(a) for a in tup]
+  unwrapped_arrays = array_creation._promote_dtype(*unwrapped_arrays)
+  return tf.concat(unwrapped_arrays, axis=0)
+
+
+@utils.np_doc(np.dstack)
+def dstack(tup):
+  unwrapped_arrays = [math.atleast_3d(a) for a in tup]
+  unwrapped_arrays = array_creation._promote_dtype(*unwrapped_arrays)
+  return tf.concat(unwrapped_arrays, axis=2)

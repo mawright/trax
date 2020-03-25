@@ -530,13 +530,15 @@ class LaxBackedNumpyTests(jtu.JaxTestCase):
 
     if check_incomplete_shape:
       # Check partial shapes with known ranks
-      specs = [tf.TensorSpec([None] * len(x.shape), x.dtype) for x in args]
+      specs = tf.nest.map_structure(
+          lambda x: tf.TensorSpec([None] * len(x.shape), x.dtype), args)
       cfun = npe.jit(fun, input_signature=specs)
       compiled_ans = cfun(*args)
       self.assertAllClose(python_ans, compiled_ans, check_dtypes, atol, rtol)
 
       # Check unknown ranks
-      specs = [tf.TensorSpec(None, x.dtype) for x in args]
+      specs = tf.nest.map_structure(lambda x: tf.TensorSpec(None, x.dtype),
+                                    args)
       cfun = npe.jit(fun, input_signature=specs)
       compiled_ans = cfun(*args)
       self.assertAllClose(python_ans, compiled_ans, check_dtypes, atol, rtol)
@@ -1333,14 +1335,14 @@ class LaxBackedNumpyTests(jtu.JaxTestCase):
       for shape in [(), (2,), (3, 4), (1, 100)]
       for axis in range(-len(shape), len(shape) + 1)
       for rng_factory in [jtu.rand_default]))
-  @disable
   def testStack(self, shape, axis, dtypes, rng_factory):
     rng = rng_factory()
     args_maker = lambda: [[rng(shape, dtype) for dtype in dtypes]]
     onp_fun = _promote_like_lnp(partial(onp.stack, axis=axis))
     lnp_fun = partial(lnp.stack, axis=axis)
     self._CheckAgainstNumpy(lnp_fun, onp_fun, args_maker, check_dtypes=True)
-
+    self._CompileAndCheck(
+        lnp_fun, args_maker, True, check_incomplete_shape=True)
 
   @named_parameters(jtu.cases_from_list(
       {"testcase_name": "_op={}_{}".format(
@@ -1356,13 +1358,14 @@ class LaxBackedNumpyTests(jtu.JaxTestCase):
       ]
       for shape in [(), (2,), (3, 4), (1, 100), (2, 3, 4)]
       for rng_factory in [jtu.rand_default]))
-  @disable
   def testHVDStack(self, shape, op, dtypes, rng_factory):
     rng = rng_factory()
     args_maker = lambda: [[rng(shape, dtype) for dtype in dtypes]]
     onp_fun = _promote_like_lnp(getattr(onp, op))
     lnp_fun = getattr(lnp, op)
     self._CheckAgainstNumpy(lnp_fun, onp_fun, args_maker, check_dtypes=True)
+    self._CompileAndCheck(
+        lnp_fun, args_maker, True, check_incomplete_shape=True)
 
   @named_parameters(jtu.cases_from_list(
       {"testcase_name": "_inshape={}_outdtype={}".format(
@@ -1601,10 +1604,10 @@ class LaxBackedNumpyTests(jtu.JaxTestCase):
            onp.float64: 1e-10, onp.complex64: 1e-3, onp.complex128: 1e-10}
     check_dtypes = shape is not jtu.PYTHON_SCALAR_SHAPE
     try:
-        self._CheckAgainstNumpy(onp_fun, lnp_fun, args_maker,
-                                check_dtypes=check_dtypes, tol=tol)
+      self._CheckAgainstNumpy(
+          onp_fun, lnp_fun, args_maker, check_dtypes=check_dtypes, tol=tol)
     except ZeroDivisionError:
-        self.skipTest("don't support checking for ZeroDivisionError")
+      self.skipTest("don't support checking for ZeroDivisionError")
     self._CompileAndCheck(lnp_fun, args_maker, check_dtypes=check_dtypes,
                           rtol=tol, atol=tol)
 
@@ -2124,9 +2127,10 @@ class LaxBackedNumpyTests(jtu.JaxTestCase):
     if op == "quantile" and numpy_version < (1, 15):
       raise SkipTest("Numpy < 1.15 does not have np.quantile")
     if op == "median":
-        args_maker = lambda: [a_rng(a_shape, a_dtype)]
+      args_maker = lambda: [a_rng(a_shape, a_dtype)]
     else:
-        args_maker = lambda: [a_rng(a_shape, a_dtype), q_rng(q_shape, q_dtype)]
+      args_maker = lambda: [a_rng(a_shape, a_dtype), q_rng(q_shape, q_dtype)]
+
     def onp_fun(*args):
       args = [x if lnp.result_type(x) != lnp.bfloat16 else
               onp.asarray(x, onp.float32) for x in args]
@@ -2267,7 +2271,8 @@ class LaxBackedNumpyTests(jtu.JaxTestCase):
     lnp_fun = lambda arg: getattr(lnp, op)(arg)
     args_maker = lambda: [pytype(2)]
     self._CheckAgainstNumpy(onp_fun, lnp_fun, args_maker, check_dtypes=True)
-    self._CompileAndCheck(lnp_fun, args_maker, check_dtypes=True)
+    self._CompileAndCheck(
+        lnp_fun, args_maker, check_dtypes=True, check_incomplete_shape=True)
 
 
   @disable
